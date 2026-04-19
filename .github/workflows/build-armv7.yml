@@ -1,0 +1,128 @@
+name: Build openMHA for ARMv7
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-armv7:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake \
+            libasound2-dev libfftw3-dev libsndfile1-dev \
+            libeigen3-dev portaudio19-dev \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+
+      - name: Configure with CMake
+        run: |
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DWITH_LSL=OFF \
+            -DWITH_JACK=OFF \
+            -DWITH_OSC=OFF
+
+      - name: Build
+        run: |
+          cd build
+          make -j$(nproc)
+
+      - name: Install
+        run: |
+          cd build
+          make install
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openMHA-armv7
+          path: build/install/
+
+🔧 第三步：配置文件详解
+触发条件 (on 部分)
+配置项	作用
+push: branches: [ main, master ]	当你推送代码到 main 或 master 分支时自动触发
+pull_request:	当有 PR 提交时触发（便于代码审查）
+workflow_dispatch:	允许你在 GitHub Actions 页面手动点击运行
+运行环境 (jobs.build-armv7.runs-on)
+yaml
+runs-on: ubuntu-20.04
+使用 Ubuntu 20.04 作为编译环境，与你之前虚拟机的环境一致，保证 glibc 版本的兼容性。
+	注意：如果用更高版本的 Ubuntu（如 22.04 或 24.04），编译出的二进制可能依赖较新的 glibc，在旧系统上无法运行。使用 20.04 编译的二进制兼容性更好。
+交叉编译工具链
+yaml
+gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+这是 ARMv7 硬浮点（hard-float）的交叉编译工具链，适合 RK3506B 这类 ARMv7 设备。
+CMake 配置参数
+参数	作用
+-DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc	指定 C 交叉编译器
+-DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++	指定 C++ 交叉编译器
+-DWITH_LSL=OFF	禁用 LSL（你不需要的功能）
+-DWITH_JACK=OFF	禁用 JACK（可选）
+-DWITH_OSC=OFF	禁用 OSC（可选）
+上传产物
+yaml
+- name: Upload artifacts
+  uses: actions/upload-artifact@v4
+  with:
+    name: openMHA-armv7
+    path: build/install/
+编译完成后，build/install/ 目录下的所有文件（包括 bin/、lib/ 等）会被打包成一个名为 openMHA-armv7 的压缩包，可以在 Actions 页面下载。
+
+🚀 第四步：提交并运行
+1. 将配置文件推送到 GitHub
+bash
+git add .github/workflows/build-armv7.yml
+git commit -m "Add ARMv7 cross-compilation workflow for openMHA"
+git push origin main
+2. 查看运行状态
+	1. 打开你的 GitHub 仓库页面
+	2. 点击 Actions 标签页
+	3. 你会看到名为 "Build openMHA for ARMv7" 的工作流正在运行
+	4. 点击进入可以查看详细的编译日志
+3. 下载编译产物
+编译成功后：
+	1. 在工作流运行记录中，找到 Artifacts 部分
+	2. 点击 openMHA-armv7 即可下载编译好的文件压缩包
+
+📦 第五步：在开发板上使用编译产物
+1. 将文件传输到开发板
+bash
+# 在电脑上解压下载的压缩包
+unzip openMHA-armv7.zip -d openMHA-armv7
+# 传输到开发板（假设开发板 IP 为 192.168.1.100）
+scp -r openMHA-armv7/* root@192.168.1.100:/data/openMHA/
+2. 在开发板上设置环境变量
+bash
+# 登录开发板
+ssh root@192.168.1.100
+# 添加到 PATH
+echo 'export PATH=/data/openMHA/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+# 验证
+mha --version
+
+📋 可选：创建 GitHub Release 自动发布
+如果你希望每次编译成功后自动创建一个 Release 并上传文件，可以在 build-armv7.yml 末尾添加以下内容：
+yaml
+# 7. 创建 Release（仅在 tag 推送时触发）
+- name: Create Release
+  if: startsWith(github.ref, 'refs/tags/')
+  uses: softprops/action-gh-release@v1
+  with:
+    files: |
+      build/install/bin/*
+      build/install/lib/*
