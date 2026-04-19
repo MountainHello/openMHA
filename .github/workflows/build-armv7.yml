@@ -1,4 +1,4 @@
-name: Build openMHA for ARMv7
+name: Build liblsl for ARMv7 (Ubuntu 20.04 compatible)
 
 on:
   push:
@@ -14,58 +14,64 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      # 添加 ARMv7 交叉编译工具链
+      - name: Install cross compilation toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            cmake \
             gcc-arm-linux-gnueabihf \
             g++-arm-linux-gnueabihf \
-            libasound2-dev:armhf \
-            libfftw3-dev:armhf \
-            libsndfile1-dev:armhf \
-            libeigen3-dev \
-            portaudio19-dev:armhf
+            cmake \
+            make \
+            file
 
-      - name: Create toolchain file
-        run: |
-          cat > toolchain.cmake << 'EOF'
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR armv7l)
-          
-          set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
-          set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
-          
-          set(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          EOF
-
+      # 配置 CMake 进行交叉编译
       - name: Configure with CMake
         run: |
           mkdir -p build
           cd build
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
             -DCMAKE_INSTALL_PREFIX=./install \
-            -DWITH_LSL=OFF \
-            -DWITH_JACK=OFF \
-            -DWITH_OSC=OFF
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_C_FLAGS="-march=armv7-a -mfloat-abi=hard -mfpu=neon" \
+            -DCMAKE_CXX_FLAGS="-march=armv7-a -mfloat-abi=hard -mfpu=neon"
 
+      # 编译
       - name: Build
         run: |
           cd build
           make -j$(nproc)
 
+      # 安装到指定目录
       - name: Install
         run: |
           cd build
           make install
 
+      # 验证编译出的二进制架构和 glibc 版本
+      - name: Verify architecture and dependencies
+        run: |
+          echo "=== 架构验证 ==="
+          file build/install/lib/liblsl.so
+          echo ""
+          echo "=== 依赖检查 (应该没有 GLIBC_2.33+ 符号) ==="
+          readelf -V build/install/lib/liblsl.so | grep GLIBC || echo "无 GLIBC 依赖"
+          echo ""
+          echo "=== 需要的动态库 ==="
+          arm-linux-gnueabihf-readelf -d build/install/lib/liblsl.so | grep NEEDED
+
+      # 打包产物
+      - name: Package artifacts
+        run: |
+          cd build/install
+          tar -czvf ../../liblsl-armv7-ubuntu20.tar.gz .
+          cd ../..
+
+      # 上传产物
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openMHA-armv7
-          path: build/install/
+          name: liblsl-armv7-ubuntu20
+          path: liblsl-armv7-ubuntu20.tar.gz
