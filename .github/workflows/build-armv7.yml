@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-armv7:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,9 +27,18 @@ jobs:
             libeigen3-dev \
             portaudio19-dev
 
-      - name: Configure
+      - name: Modify configure script to skip LSL/OSC checks
         run: |
           chmod +x configure
+          # 注释掉 LSL 检查
+          sed -i 's/check_lsl/#check_lsl/g' configure
+          # 注释掉 OSC 检查
+          sed -i 's/check_osc/#check_osc/g' configure
+          # 注释掉 JACK 检查
+          sed -i 's/check_jack/#check_jack/g' configure
+
+      - name: Configure
+        run: |
           ./configure --without-lsl --without-jack --without-osc
 
       - name: Build
