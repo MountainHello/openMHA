@@ -1,0 +1,76 @@
+name: Build liblsl for ARMv7
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-armv7:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Add ARM architecture support
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo apt-get update
+
+      - name: Install cross compilation toolchain
+        run: |
+          sudo apt-get install -y \
+            crossbuild-essential-armhf \
+            cmake \
+            git \
+            libboost-all-dev:armhf
+
+      - name: Create CMake toolchain file
+        run: |
+          cat > toolchain-armhf.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR armv7l)
+
+          set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
+          set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+
+          set(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+          set(Boost_NO_BOOST_CMAKE ON)
+          EOF
+
+      - name: Configure with CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=../toolchain-armhf.cmake \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DBUILD_SHARED_LIBS=ON
+
+      - name: Build
+        run: |
+          cd build
+          make -j$(nproc)
+
+      - name: Install
+        run: |
+          cd build
+          make install
+
+      - name: Verify architecture
+        run: |
+          file build/install/lib/liblsl.so
+          # 应该显示 ARM 架构
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: liblsl-armv7
+          path: build/install/
