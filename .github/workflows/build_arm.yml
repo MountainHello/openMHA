@@ -1,16 +1,20 @@
-name: Build openMHA for ARMv7
+name: Build openMHA for ARMv7 (Ubuntu 20.04 compatible)
 
 on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build-armv7:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install cross compilation toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -20,11 +24,24 @@ jobs:
             libasound2-dev \
             libfftw3-dev \
             libsndfile1-dev \
-            libeigen3-dev
+            libeigen3-dev \
+            make \
+            file
 
-      - name: Configure
+      - name: Modify configure script to skip optional libraries
         run: |
           chmod +x configure
+          # 注释掉可选库的检查函数
+          sed -i 's/check_jack/#check_jack/g' configure
+          sed -i 's/check_lsl/#check_lsl/g' configure
+          sed -i 's/check_osc/#check_osc/g' configure
+          # 在检查函数开头添加 return 0（备选方案）
+          sed -i '/^check_jack() {/a\    return 0' configure
+          sed -i '/^check_lsl() {/a\    return 0' configure
+          sed -i '/^check_osc() {/a\    return 0' configure
+
+      - name: Configure with cross compiler
+        run: |
           ./configure --host=arm-linux-gnueabihf \
                       --without-lsl \
                       --without-jack \
@@ -34,10 +51,26 @@ jobs:
         run: |
           make -j$(nproc)
 
+      - name: Install to temporary directory
+        run: |
+          make install DESTDIR=$(pwd)/install
+
+      - name: Verify architecture
+        run: |
+          echo "=== 架构验证 ==="
+          file install/usr/local/bin/mha || echo "mha not found"
+          echo ""
+          echo "=== 查找编译产物 ==="
+          find install -name "*.so" -o -name "mha" 2>/dev/null
+
+      - name: Package artifacts
+        run: |
+          cd install
+          tar -czvf ../openMHA-armv7-ubuntu20.tar.gz .
+          cd ..
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openMHA-armv7
-          path: |
-            bin/
-            lib/
+          name: openMHA-armv7-ubuntu20
+          path: openMHA-armv7-ubuntu20.tar.gz
