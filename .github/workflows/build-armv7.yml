@@ -10,7 +10,6 @@ on:
 jobs:
   build-armv7:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -19,24 +18,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
-            libasound2-dev libfftw3-dev libsndfile1-dev \
-            libeigen3-dev portaudio19-dev
+            build-essential \
+            gcc-arm-linux-gnueabihf \
+            g++-arm-linux-gnueabihf \
+            libasound2-dev \
+            libfftw3-dev \
+            libsndfile1-dev \
+            libeigen3-dev \
+            portaudio19-dev
 
-      - name: Configure with configure script
+      - name: Configure
         run: |
-          cd openMHA
           chmod +x configure
           ./configure --without-lsl --without-jack --without-osc
 
       - name: Build
         run: |
-          cd openMHA
           make -j$(nproc)
 
       - name: Install
         run: |
-          cd openMHA
           mkdir -p install
           make install DESTDIR=$(pwd)/install
 
@@ -44,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openMHA-armv7
-          path: openMHA/install/
+          path: install/
