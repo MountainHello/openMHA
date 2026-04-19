@@ -19,39 +19,53 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            cmake \
             gcc-arm-linux-gnueabihf \
             g++-arm-linux-gnueabihf \
-            libasound2-dev \
-            libfftw3-dev \
-            libsndfile1-dev \
+            libasound2-dev:armhf \
+            libfftw3-dev:armhf \
+            libsndfile1-dev:armhf \
             libeigen3-dev \
-            portaudio19-dev
+            portaudio19-dev:armhf
 
-      - name: Modify configure script to skip LSL/OSC checks
+      - name: Create toolchain file
         run: |
-          chmod +x configure
-          # 注释掉 LSL 检查
-          sed -i 's/check_lsl/#check_lsl/g' configure
-          # 注释掉 OSC 检查
-          sed -i 's/check_osc/#check_osc/g' configure
-          # 注释掉 JACK 检查
-          sed -i 's/check_jack/#check_jack/g' configure
+          cat > toolchain.cmake << 'EOF'
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR armv7l)
+          
+          set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
+          set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+          
+          set(CMAKE_FIND_ROOT_PATH /usr/arm-linux-gnueabihf)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          EOF
 
-      - name: Configure
+      - name: Configure with CMake
         run: |
-          ./configure --without-lsl --without-jack --without-osc
+          mkdir -p build
+          cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake \
+            -DCMAKE_INSTALL_PREFIX=./install \
+            -DWITH_LSL=OFF \
+            -DWITH_JACK=OFF \
+            -DWITH_OSC=OFF
 
       - name: Build
         run: |
+          cd build
           make -j$(nproc)
 
       - name: Install
         run: |
-          mkdir -p install
-          make install DESTDIR=$(pwd)/install
+          cd build
+          make install
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: openMHA-armv7
-          path: install/
+          path: build/install/
