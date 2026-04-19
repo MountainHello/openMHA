@@ -1,4 +1,4 @@
-name: Build ARMv7 for Ubuntu 20.04
+name: Build liblsl for ARMv7
 
 on:
   push:
@@ -21,8 +21,7 @@ jobs:
             gcc-arm-linux-gnueabihf \
             g++-arm-linux-gnueabihf \
             cmake \
-            make \
-            file
+            make
 
       - name: Configure with CMake
         run: |
@@ -32,9 +31,7 @@ jobs:
             -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
             -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
             -DCMAKE_INSTALL_PREFIX=./install \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_CXX_FLAGS="-D_GLIBCXX_USE_CXX11_ABI=0 -march=armv7-a -mfloat-abi=hard -mfpu=neon" \
-            -DCMAKE_C_FLAGS="-march=armv7-a -mfloat-abi=hard -mfpu=neon"
+            -DBUILD_SHARED_LIBS=ON
 
       - name: Build
         run: |
@@ -46,25 +43,14 @@ jobs:
           cd build
           make install
 
-      - name: Verify compatibility
-        run: |
-          echo "=== 架构验证 ==="
-          file build/install/lib/liblsl.so
-          echo ""
-          echo "=== GLIBC 版本检查（应该没有 2.33+）==="
-          readelf -V build/install/lib/liblsl.so | grep GLIBC || echo "无 GLIBC 依赖"
-          echo ""
-          echo "=== 需要的动态库 ==="
-          arm-linux-gnueabihf-readelf -d build/install/lib/liblsl.so | grep NEEDED
-
       - name: Package artifacts
         run: |
           cd build/install
-          tar -czvf ../../liblsl-armv7-ubuntu20.tar.gz .
+          tar -czvf ../../liblsl-armv7.tar.gz .
           cd ../..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: liblsl-armv7-ubuntu20
-          path: liblsl-armv7-ubuntu20.tar.gz
+          name: liblsl-armv7
+          path: liblsl-armv7.tar.gz
