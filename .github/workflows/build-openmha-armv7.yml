@@ -1,10 +1,6 @@
-name: Build openMHA for ARMv7 (Docker Ubuntu 20.04)
+name: Build openMHA for ARMv7 (Ubuntu 20.04)
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -20,19 +16,15 @@ jobs:
             -v $(pwd):/workspace \
             -w /workspace \
             -e DEBIAN_FRONTEND=noninteractive \
-            -e TZ=UTC \
             ubuntu:20.04 \
             bash -c "
-              # 设置环境变量
-              export DEBIAN_FRONTEND=noninteractive
-              export TZ=UTC
+              set -e
               
-              # 更新并安装依赖
+              export DEBIAN_FRONTEND=noninteractive
+              
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential \
-                gcc-arm-linux-gnueabihf \
-                g++-arm-linux-gnueabihf \
                 libasound2-dev \
                 libfftw3-dev \
                 libsndfile1-dev \
@@ -40,35 +32,29 @@ jobs:
                 make \
                 ca-certificates
               
-              # 修改 configure 脚本，跳过可选库检查
               chmod +x configure
               sed -i 's/check_jack/#check_jack/g' configure
               sed -i 's/check_lsl/#check_lsl/g' configure
               sed -i 's/check_osc/#check_osc/g' configure
               
-              # 强制设置架构为 ARMv7
-              sed -i 's/ARCH=x86_64/ARCH=armv7l/g' configure
-              
-              # 强制使用交叉编译器
-              sed -i 's/CC=gcc/CC=arm-linux-gnueabihf-gcc/g' configure
-              sed -i 's/CXX=g++/CXX=arm-linux-gnueabihf-g++/g' configure
-              
-              # 替换 SSE 为 NEON
-              sed -i 's/-msse -msse2 -mfpmath=sse/-mcpu=cortex-a8 -mfloat-abi=hard -mfpu=neon/g' configure
-              
-              # 配置
               ./configure --without-lsl --without-jack --without-osc
-              
-              # 编译
               make -j\$(nproc)
-              
-              # 安装到临时目录
               make install DESTDIR=\$(pwd)/install
               
-              # 打包
-              cd install
-              tar -czvf /workspace/openMHA-armv7.tar.gz .
+              # 确保目录存在
+              mkdir -p /workspace/artifacts
+              
+              # 复制编译产物到 workspace（避免 tar 读取变化中的目录）
+              cp -r install/* /workspace/artifacts/
+              
+              echo "编译完成，产物已复制到 /workspace/artifacts"
             "
+
+      - name: Package artifacts
+        run: |
+          cd artifacts
+          tar -czvf ../openMHA-armv7.tar.gz .
+          cd ..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
