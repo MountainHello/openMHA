@@ -20,10 +20,9 @@ jobs:
             libasound2-dev \
             libfftw3-dev \
             libsndfile1-dev \
-            libeigen3-dev \
-            make
+            libeigen3-dev
 
-      - name: Modify configure script for ARM cross compilation
+      - name: Force ARM cross compilation in configure script
         run: |
           chmod +x configure
           # 禁用可选库检查
@@ -32,15 +31,13 @@ jobs:
           sed -i 's/check_osc/#check_osc/g' configure
           # 强制设置架构为 ARM
           sed -i 's/^ARCH=.*$/ARCH=armv7l/' configure
-          # 修改编译器为交叉编译器
+          # 强制修改编译器为交叉编译器
           sed -i 's/CC=gcc/CC=arm-linux-gnueabihf-gcc/g' configure
           sed -i 's/CXX=g++/CXX=arm-linux-gnueabihf-g++/g' configure
-          sed -i 's/cc=gcc/cc=arm-linux-gnueabihf-gcc/g' configure
-          sed -i 's/cxx=g++/cxx=arm-linux-gnueabihf-g++/g' configure
-          # 修改 SSE 选项为 ARM NEON
+          # 修改编译标志为 ARM
           sed -i 's/-msse -msse2 -mfpmath=sse/-mcpu=cortex-a8 -mfloat-abi=hard -mfpu=neon/g' configure
 
-      - name: Run configure
+      - name: Configure
         run: |
           ./configure --without-lsl --without-jack --without-osc
 
@@ -53,13 +50,7 @@ jobs:
           make install DESTDIR=$(pwd)/install
 
       - name: Package artifacts
-        run: |
-          cd install
-          tar -czvf ../openMHA-armv7.tar.gz .
-          cd ..
-
-      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: openMHA-armv7
-          path: openMHA-armv7.tar.gz
+          path: install/
