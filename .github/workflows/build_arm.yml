@@ -30,15 +30,17 @@ jobs:
           sed -i 's/check_jack/#check_jack/g' configure
           sed -i 's/check_lsl/#check_lsl/g' configure
           sed -i 's/check_osc/#check_osc/g' configure
-          # 强制设置 ARM 架构
-          sed -i 's/ARCH=x86_64/ARCH=armv7l/g' configure
+          # 强制设置架构为 ARM
+          sed -i 's/^ARCH=.*$/ARCH=armv7l/' configure
           # 修改编译器为交叉编译器
-          sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' configure
-          sed -i 's/g++/arm-linux-gnueabihf-g++/g' configure
-          # 修改 SSE 选项（ARM 不需要）
-          sed -i 's/SSE+=-msse -msse2 -mfpmath=sse/SSE+=-mcpu=cortex-a8 -mfloat-abi=hard -mfpu=neon/g' configure
+          sed -i 's/CC=gcc/CC=arm-linux-gnueabihf-gcc/g' configure
+          sed -i 's/CXX=g++/CXX=arm-linux-gnueabihf-g++/g' configure
+          sed -i 's/cc=gcc/cc=arm-linux-gnueabihf-gcc/g' configure
+          sed -i 's/cxx=g++/cxx=arm-linux-gnueabihf-g++/g' configure
+          # 修改 SSE 选项为 ARM NEON
+          sed -i 's/-msse -msse2 -mfpmath=sse/-mcpu=cortex-a8 -mfloat-abi=hard -mfpu=neon/g' configure
 
-      - name: Configure
+      - name: Run configure
         run: |
           ./configure --without-lsl --without-jack --without-osc
 
@@ -46,15 +48,9 @@ jobs:
         run: |
           make -j$(nproc)
 
-      - name: Install to temporary directory
+      - name: Install
         run: |
           make install DESTDIR=$(pwd)/install
-
-      - name: Verify architecture
-        run: |
-          echo "=== 架构验证 ==="
-          file install/usr/local/bin/mha || echo "mha not found"
-          find install -name "*.so" -o -name "mha" | head -10
 
       - name: Package artifacts
         run: |
