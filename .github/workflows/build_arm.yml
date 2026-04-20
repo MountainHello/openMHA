@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-armv7:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,24 +28,22 @@ jobs:
             make \
             file
 
-      - name: Modify configure script to skip optional libraries
+      - name: Modify configure script for cross compilation
         run: |
           chmod +x configure
-          # 注释掉可选库的检查函数
+          # 禁用可选库检查
           sed -i 's/check_jack/#check_jack/g' configure
           sed -i 's/check_lsl/#check_lsl/g' configure
           sed -i 's/check_osc/#check_osc/g' configure
-          # 在检查函数开头添加 return 0（备选方案）
-          sed -i '/^check_jack() {/a\    return 0' configure
-          sed -i '/^check_lsl() {/a\    return 0' configure
-          sed -i '/^check_osc() {/a\    return 0' configure
 
-      - name: Configure with cross compiler
+      - name: Configure for ARMv7
         run: |
           ./configure --host=arm-linux-gnueabihf \
                       --without-lsl \
                       --without-jack \
-                      --without-osc
+                      --without-osc \
+                      CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
+                      CFLAGS="-march=armv7-a -mfloat-abi=hard"
 
       - name: Build
         run: |
@@ -55,13 +53,13 @@ jobs:
         run: |
           make install DESTDIR=$(pwd)/install
 
-      - name: Verify architecture
+      - name: Verify compatibility
         run: |
           echo "=== 架构验证 ==="
           file install/usr/local/bin/mha || echo "mha not found"
           echo ""
-          echo "=== 查找编译产物 ==="
-          find install -name "*.so" -o -name "mha" 2>/dev/null
+          echo "=== GLIBC 版本检查 ==="
+          arm-linux-gnueabihf-readelf -V install/usr/local/bin/mha | grep GLIBC || echo "无 GLIBC 依赖"
 
       - name: Package artifacts
         run: |
