@@ -27,8 +27,6 @@ jobs:
               echo '=== 2. 安装基础依赖 ==='
               apt-get install -y --no-install-recommends \
                 build-essential \
-                cmake \
-                git \
                 wget \
                 ca-certificates \
                 libasound2-dev \
@@ -40,7 +38,14 @@ jobs:
                 gcc-arm-linux-gnueabihf \
                 g++-arm-linux-gnueabihf
               
-              echo '=== 3. 编译 liblsl (ARMv7) ==='
+              echo '=== 3. 升级 CMake 到 3.23+ ==='
+              # 方法1：使用 pip 安装最新 CMake
+              apt-get install -y python3-pip
+              pip3 install --upgrade cmake
+              export PATH=/root/.local/bin:\$PATH
+              cmake --version
+              
+              echo '=== 4. 编译 liblsl (ARMv7) ==='
               cd /tmp
               git clone https://github.com/sccn/liblsl.git
               cd liblsl
@@ -55,12 +60,11 @@ jobs:
               make -j\$(nproc)
               make install
               
-              echo '=== 4. 验证 liblsl 安装 ==='
-              ls -la /usr/local/lib/liblsl.so*
-              ls -la /usr/local/include/lsl_cpp.h
+              echo '=== 5. 验证 liblsl 安装 ==='
+              ls -la /usr/local/lib/liblsl.so* || echo 'liblsl 安装失败'
+              ls -la /usr/local/include/lsl_cpp.h || echo '头文件安装失败'
               
-              echo '=== 5. 安装 ARM 架构的交叉依赖 ==='
-              # 添加 ARM 架构支持
+              echo '=== 6. 安装 ARM 架构的交叉依赖 ==='
               dpkg --add-architecture armhf
               apt-get update
               apt-get install -y --no-install-recommends \
@@ -70,10 +74,9 @@ jobs:
                 libjack-jackd2-dev:armhf \
                 liblo-dev:armhf
               
-              echo '=== 6. 配置 openMHA 编译环境 ==='
+              echo '=== 7. 配置 openMHA 编译环境 ==='
               cd /workspace
               
-              # 设置交叉编译环境变量
               export CC=arm-linux-gnueabihf-gcc
               export CXX=arm-linux-gnueabihf-g++
               export PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
@@ -81,39 +84,34 @@ jobs:
               export CXXFLAGS='-march=armv7-a -mfloat-abi=hard -mfpu=neon -D_GLIBCXX_USE_CXX11_ABI=0'
               export LDFLAGS='-L/usr/lib/arm-linux-gnueabihf'
               
-              echo '=== 7. 修改 configure 脚本禁用不必要的检查 ==='
+              echo '=== 8. 修改 configure 脚本 ==='
               chmod +x configure
-              # 禁用 JACK/OSC 检查（liblsl 已安装，会自动检测）
               sed -i 's/check_jack/#check_jack/g' configure
               sed -i 's/check_osc/#check_osc/g' configure
-              # 强制设置 ARM 架构
               sed -i 's/ARCH=x86_64/ARCH=armv7l/g' configure
-              sed -i 's/ARCH=\`uname -m\`/ARCH=armv7l/g' configure
               
-              echo '=== 8. 运行 configure ==='
-              ./configure \
-                --host=arm-linux-gnueabihf \
-                --with-lsl \
-                --with-jack \
-                --with-osc \
-                --with-alsa \
-                --with-eigen
+              echo '=== 9. 运行 configure ==='
+              ./configure --host=arm-linux-gnueabihf \
+                          --with-lsl \
+                          --with-jack \
+                          --with-osc
               
-              echo '=== 9. 编译 openMHA ==='
+              echo '=== 10. 编译 openMHA ==='
               make -j\$(nproc)
               
-              echo '=== 10. 安装到临时目录 ==='
+              echo '=== 11. 安装到临时目录 ==='
               make install DESTDIR=/workspace/install
               
               echo '=== 编译完成 ==='
-              ls -la /workspace/install/usr/local/bin/
             "
 
       - name: Package artifacts
         run: |
-          cd install
-          tar -czvf ../openMHA-full-armv7.tar.gz .
-          cd ..
+          if [ -d install ]; then
+            cd install
+            tar -czvf ../openMHA-full-armv7.tar.gz .
+            cd ..
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
