@@ -1,10 +1,6 @@
-name: Build openMHA for ARMv7 (Ubuntu 20.04 compatible)
+name: Build openMHA for ARMv7
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -25,25 +21,26 @@ jobs:
             libfftw3-dev \
             libsndfile1-dev \
             libeigen3-dev \
-            make \
-            file
+            make
 
-      - name: Modify configure script for cross compilation
+      - name: Modify configure script for ARM cross compilation
         run: |
           chmod +x configure
           # 禁用可选库检查
           sed -i 's/check_jack/#check_jack/g' configure
           sed -i 's/check_lsl/#check_lsl/g' configure
           sed -i 's/check_osc/#check_osc/g' configure
+          # 强制设置 ARM 架构
+          sed -i 's/ARCH=x86_64/ARCH=armv7l/g' configure
+          # 修改编译器为交叉编译器
+          sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' configure
+          sed -i 's/g++/arm-linux-gnueabihf-g++/g' configure
+          # 修改 SSE 选项（ARM 不需要）
+          sed -i 's/SSE+=-msse -msse2 -mfpmath=sse/SSE+=-mcpu=cortex-a8 -mfloat-abi=hard -mfpu=neon/g' configure
 
-      - name: Configure for ARMv7
+      - name: Configure
         run: |
-          ./configure --host=arm-linux-gnueabihf \
-                      --without-lsl \
-                      --without-jack \
-                      --without-osc \
-                      CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" \
-                      CFLAGS="-march=armv7-a -mfloat-abi=hard"
+          ./configure --without-lsl --without-jack --without-osc
 
       - name: Build
         run: |
@@ -53,22 +50,20 @@ jobs:
         run: |
           make install DESTDIR=$(pwd)/install
 
-      - name: Verify compatibility
+      - name: Verify architecture
         run: |
           echo "=== 架构验证 ==="
           file install/usr/local/bin/mha || echo "mha not found"
-          echo ""
-          echo "=== GLIBC 版本检查 ==="
-          arm-linux-gnueabihf-readelf -V install/usr/local/bin/mha | grep GLIBC || echo "无 GLIBC 依赖"
+          find install -name "*.so" -o -name "mha" | head -10
 
       - name: Package artifacts
         run: |
           cd install
-          tar -czvf ../openMHA-armv7-ubuntu20.tar.gz .
+          tar -czvf ../openMHA-armv7.tar.gz .
           cd ..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openMHA-armv7-ubuntu20
-          path: openMHA-armv7-ubuntu20.tar.gz
+          name: openMHA-armv7
+          path: openMHA-armv7.tar.gz
