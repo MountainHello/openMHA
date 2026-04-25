@@ -1,0 +1,83 @@
+name: Build openMHA for ARMv7 (Direct Make)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-openmha:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake git \
+            gcc-arm-linux-gnueabihf \
+            g++-arm-linux-gnueabihf \
+            libasound2-dev \
+            libfftw3-dev \
+            libsndfile1-dev \
+            libeigen3-dev
+
+      - name: Build liblsl
+        run: |
+          cd /tmp
+          git clone https://github.com/sccn/liblsl.git
+          cd liblsl
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+            -DCMAKE_INSTALL_PREFIX=/usr/arm-linux-gnueabihf
+          make -j$(nproc)
+          sudo make install
+
+      - name: Create custom config.mk
+        run: |
+          cd ${{ github.workspace }}
+          cat > config.mk << 'EOF'
+          PLATFORM = linux
+          ARCH = armv7l
+          PREFIX = /usr/local
+          
+          CC = arm-linux-gnueabihf-gcc
+          CXX = arm-linux-gnueabihf-g++
+          AR = arm-linux-gnueabihf-ar
+          LD = arm-linux-gnueabihf-ld
+          
+          CFLAGS = -Wall -Werror -std=gnu11 -fPIC -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -g
+          CXXFLAGS = -Wall -Werror -std=c++17 -fPIC -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -D_GLIBCXX_USE_CXX11_ABI=0 -g
+          LDFLAGS = -L/usr/arm-linux-gnueabihf/lib
+          CPPFLAGS = -I/usr/arm-linux-gnueabihf/include
+          
+          WITH_LSL = yes
+          WITH_JACK = no
+          WITH_OSC = no
+          WITH_ALSA = yes
+          WITH_EIGEN = yes
+          
+          CXXSTANDARD = c++17
+          GCC_VER = -9
+          BUILD_DIR = armv7l-linux-gcc-9
+          EOF
+
+      - name: Build with custom config
+        run: |
+          cd ${{ github.workspace }}
+          # 备份并修改 Makefile
+          cp Makefile Makefile.bak
+          sed -i 's/^include config.mk/#include config.mk/' Makefile
+          sed -i '/^config.mk:/,/^$/s/^/#/' Makefile
+          
+          make -j$(nproc)
+          make install DESTDIR=${{ github.workspace }}/install
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openMHA-armv7
+          path: install/
