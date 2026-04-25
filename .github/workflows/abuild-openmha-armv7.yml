@@ -1,7 +1,11 @@
-name: Build openMHA for ARMv7 (Direct Make)
+name: Build openMHA for ARMv7 with LSL
 
 on:
   workflow_dispatch:
+
+env:
+  TARGET_HOST: arm-linux-gnueabihf
+  COMPAT_FLAGS: -D_GLIBCXX_USE_CXX11_ABI=0
 
 jobs:
   build-openmha:
@@ -10,35 +14,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install toolchain and dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            cmake git \
+            cmake \
+            git \
+            wget \
             gcc-arm-linux-gnueabihf \
             g++-arm-linux-gnueabihf \
             libasound2-dev \
             libfftw3-dev \
             libsndfile1-dev \
-            libeigen3-dev
+            libeigen3-dev \
+            libtool \
+            automake \
+            autoconf
 
-      - name: Build liblsl
+      - name: Build liblsl for ARMv7
         run: |
+          echo "=== Building liblsl ==="
           cd /tmp
           git clone https://github.com/sccn/liblsl.git
           cd liblsl
           mkdir build && cd build
           cmake .. \
-            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-            -DCMAKE_INSTALL_PREFIX=/usr/arm-linux-gnueabihf
+            -DCMAKE_C_COMPILER=${TARGET_HOST}-gcc \
+            -DCMAKE_CXX_COMPILER=${TARGET_HOST}-g++ \
+            -DCMAKE_CXX_FLAGS="${COMPAT_FLAGS}" \
+            -DCMAKE_C_FLAGS="-march=armv7-a -mfloat-abi=hard -mfpu=neon" \
+            -DCMAKE_INSTALL_PREFIX=/usr/${TARGET_HOST}
           make -j$(nproc)
           sudo make install
+          echo "liblsl installed"
 
-      - name: Create custom config.mk
+      - name: Prepare openMHA build (skip external_libs)
         run: |
           cd ${{ github.workspace }}
+          
+          # 修改 Makefile，跳过 external_libs 编译
+          sed -i 's/^external_libs:.*/external_libs:/' Makefile
+          sed -i '/^external_libs:/,/^$/c\external_libs:\n\t@echo "Skipping external_libs compilation"' Makefile
+          
+          # 创建 config.mk
           cat > config.mk << 'EOF'
           PLATFORM = linux
           ARCH = armv7l
@@ -50,9 +69,9 @@ jobs:
           LD = arm-linux-gnueabihf-ld
           
           CFLAGS = -Wall -Werror -std=gnu11 -fPIC -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -g
-          CXXFLAGS = -Wall -Werror -std=c++17 -fPIC -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon -D_GLIBCXX_USE_CXX11_ABI=0 -g
-          LDFLAGS = -L/usr/arm-linux-gnueabihf/lib
-          CPPFLAGS = -I/usr/arm-linux-gnueabihf/include
+          CXXFLAGS = -Wall -Werror -std=c++17 -fPIC -O2 -march=armv7-a -mfloat-abi=hard -mfpu=neon ${COMPAT_FLAGS} -g
+          LDFLAGS = -L/usr/${TARGET_HOST}/lib
+          CPPFLAGS = -I/usr/${TARGET_HOST}/include
           
           WITH_LSL = yes
           WITH_JACK = no
@@ -64,20 +83,48 @@ jobs:
           GCC_VER = -9
           BUILD_DIR = armv7l-linux-gcc-9
           EOF
+          
+          # 修改 Makefile 包含我们的 config.mk
+          echo "include config.mk" >> Makefile
 
-      - name: Build with custom config
+      - name: Build openMHA
         run: |
           cd ${{ github.workspace }}
-          # 备份并修改 Makefile
-          cp Makefile Makefile.bak
-          sed -i 's/^include config.mk/#include config.mk/' Makefile
-          sed -i '/^config.mk:/,/^$/s/^/#/' Makefile
           
+          # 编译 mha 库
+          cd mha
           make -j$(nproc)
-          make install DESTDIR=${{ github.workspace }}/install
+          cd ..
+          
+          # 编译主程序
+          make -j$(nproc) mha
+
+      - name: Install to staging directory
+        run: |
+          cd ${{ github.workspace }}
+          mkdir -p install/usr/local/bin install/usr/local/lib
+          
+          # 复制二进制文件
+          cp -r mha/*.so* install/usr/local/lib/ 2>/dev/null || true
+          cp mha install/usr/local/bin/ 2>/dev/null || true
+          cp mha*.so* install/usr/local/lib/ 2>/dev/null || true
+          
+          # 查找并复制 mha 可执行文件
+          find . -name "mha" -type f -executable -exec cp {} install/usr/local/bin/ \;
+          
+          echo "=== Installed files ==="
+          ls -la install/usr/local/bin/
+          ls -la install/usr/local/lib/
+
+      - name: Package artifacts
+        run: |
+          cd ${{ github.workspace }}/install
+          tar -czvf ../openMHA-armv7-lsl.tar.gz .
+          cd ..
+          echo "✅ Artifact created: openMHA-armv7-lsl.tar.gz"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openMHA-armv7
-          path: install/
+          name: openMHA-armv7-with-lsl
+          path: openMHA-armv7-lsl.tar.gz
